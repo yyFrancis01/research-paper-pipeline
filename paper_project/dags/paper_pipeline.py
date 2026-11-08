@@ -3,7 +3,7 @@ PLACE THIS FILE IN:   <your local project>/dags/paper_pipeline.py
 
 What it does (the numbers match the steps in the assignment PDF):
     3. One scheduled Airflow DAG that looks for new PDFs
-    4. Converts each PDF to Markdown (pymupdf)
+    4. Converts each PDF to Markdown (pymupdf4llm)
     5. Asks a local LLM (Ollama, OpenAI-compatible) for title/summary/keywords/category as JSON
     6. Parses the JSON and saves it in a local SQLite database
     7. Regenerates a static HTML page (search + category filter)
@@ -29,7 +29,7 @@ import os
 import sqlite3
 from datetime import datetime
 
-import pymupdf
+import pymupdf4llm
 import requests
 from openai import OpenAI
 
@@ -58,7 +58,7 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "ollama")  # Ollama ignores it, but 
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama3.2")
 MAX_MARKDOWN_CHARS = 12000
 #Change if you want a notification on discord
-DISCORD_WEBHOOK_URL = ""
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 # ============================================================================
 # SECTION 3: SQLite database helpers (step 6)
@@ -136,7 +136,7 @@ def get_all_papers():
 
 #PDF -> Markdown (step 4)
 def convert_pdf_to_markdown(pdf_path):
-    markdown_text = pymupdf.to_markdown(pdf_path)
+    markdown_text = pymupdf4llm.to_markdown(pdf_path)
     return markdown_text
 
 
@@ -152,10 +152,15 @@ def build_prompt(markdown_text):
         '  "title": "Paper title",\n'
         '  "summary": "A short summary of the paper (2-4 sentences).",\n'
         '  "keywords": ["keyword one", "keyword two"],\n'
-        '  "category": "Data Engineering"\n'
+        '  "category": "One category from the list below"\n'
         "}\n"
-        '"keywords" must be a list of strings and "category" a single short label.\n\n'
-        "PAPER:\n" + short_text
+        '"keywords" must be a list of strings.\n'
+        '"category" must be exactly ONE of: "Machine Learning", '
+        '"Natural Language Processing", "LLMs and Agents", "Data Engineering", '
+        '"Responsible AI", "Other".\n\n'
+        "PAPER:\n" + short_text + "\n\n"
+        "Now answer with the JSON object. Choose the MOST SPECIFIC category: "
+        "use \"Machine Learning\" only if none of the others fit."
     )
     return prompt
 
@@ -444,7 +449,10 @@ with DAG(
             converted.append(filename)
             print("Converted " + filename)
 
+        if filenames and not converted:
+            raise RuntimeError("No PDF could be converted")
         return converted
+
 
     @task
     def extract_and_store(filenames):
@@ -472,6 +480,8 @@ with DAG(
             stored.append({"filename": filename, "title": metadata["title"]})
             print("Saved " + filename + " -> " + metadata["title"])
 
+        if filenames and not stored:
+            raise RuntimeError("No paper could be processed by the LLM")
         return stored
 
     @task
