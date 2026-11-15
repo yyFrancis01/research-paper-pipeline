@@ -12,16 +12,6 @@ What it does (the numbers match the steps in the assignment PDF):
 The DAG has 5 tasks that run one after the other:
 
     find_new_pdfs -> convert_pdfs -> extract_and_store -> generate_html -> notify_discord
-
-All the code is in this single file. It is split into sections:
-    SECTION 1: Imports
-    SECTION 2: Configuration (paths, LLM, Discord)
-    SECTION 3: SQLite database helpers          (step 6)
-    SECTION 4: PDF -> Markdown                  (step 4)
-    SECTION 5: LLM call + JSON parsing          (step 5)
-    SECTION 6: HTML page generation             (step 7)
-    SECTION 7: Discord notification             (step 8)
-    SECTION 8: The Airflow DAG and its tasks    (step 3)
 """
 
 import json
@@ -60,9 +50,6 @@ MAX_MARKDOWN_CHARS = 12000
 #Change if you want a notification on discord
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-# ============================================================================
-# SECTION 3: SQLite database helpers (step 6)
-# ============================================================================
 def get_connection():
     """
     Open the SQLite database and make sure the 'papers' table exists
@@ -189,14 +176,14 @@ def parse_and_check(raw_text):
     if not isinstance(data, dict):
         raise ValueError("LLM answer is JSON but not an object")
 
-    # Text fields: must exist and be strings.
+    #Text fields: must exist and be strings.
     for field in ["title", "summary", "category"]:
         if field not in data:
             raise ValueError("Missing field: " + field)
         if not isinstance(data[field], str):
             raise ValueError("Field '" + field + "' must be a string")
 
-    # Keywords: must exist and be a list of strings.
+    #Keywords: must exist and be a list of strings.
     if "keywords" not in data:
         raise ValueError("Missing field: keywords")
     if not isinstance(data["keywords"], list):
@@ -212,9 +199,8 @@ def extract_metadata(markdown_text):
     """
     Ask the LLM for the metadata of one paper.
 
-    If the answer cannot be parsed or is invalid, try ONE more time
-    (as required by the assignment). If the second try also fails,
-    the ValueError is raised to the caller.
+    If the answer cannot be parsed or is invalid, try ONE more time. 
+    If the second try also fails, the ValueError is raised to the caller.
     Returns a dict with title, summary, keywords and category.
     """
     prompt = build_prompt(markdown_text)
@@ -229,9 +215,6 @@ def extract_metadata(markdown_text):
     return parse_and_check(raw_text)
 
 
-# ============================================================================
-# SECTION 6: Static HTML page (step 7)
-# ============================================================================
 # The page is a template. The placeholder __PAPERS_JSON__ is replaced by the
 # list of papers (as JSON). All the searching/filtering is done in the browser
 # with a few lines of JavaScript, so no server is needed.
@@ -368,9 +351,6 @@ def generate_html_page():
     print("HTML page written to " + HTML_PATH + " (" + str(len(papers)) + " papers)")
 
 
-# ============================================================================
-# SECTION 7: Discord notification (step 8)
-# ============================================================================
 def send_discord_message(text):
     """
     Post a text message to the Discord channel linked to the webhook.
@@ -386,9 +366,6 @@ def send_discord_message(text):
     response.raise_for_status()
 
 
-# ============================================================================
-# SECTION 8: The Airflow DAG and its tasks (step 3)
-# ============================================================================
 # Runs every 5 minutes. catchup=False means Airflow does not replay missed
 # runs. max_active_runs=1 prevents two runs processing the same PDF at once.
 with DAG(
